@@ -192,6 +192,9 @@ impl Cx {
         };
         
         for (path,dep) in &mut self.dependencies{
+            // MARK: Breaking change - Xcode copies project resources into the bundle root
+            // I don't like that paths include my computers user name, BTW
+            let path = &std::path::Path::new(&path).file_name().unwrap().to_str().unwrap().to_string();
             if let Ok(mut file_handle) = File::open(format!("{}/{}",bundle_path,path)) {
                 let mut buffer = Vec::<u8>::new();
                 if file_handle.read_to_end(&mut buffer).is_ok() {
@@ -435,11 +438,8 @@ impl CxOsApi for Cx {
         self.start_disk_live_file_watcher(50);
         
         self.live_scan_dependencies();
-        //#[cfg(target_feature="sim")]
-        #[cfg(apple_sim)]
-        self.native_load_dependencies();
         
-        #[cfg(not(apple_sim))]
+        // MARK: Breaking change - always load resources from bundle.
         self.ios_load_dependencies();
     }
     

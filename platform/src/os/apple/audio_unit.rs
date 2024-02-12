@@ -1240,6 +1240,8 @@ impl AudioUnit {
         }
     }
     
+    // This function was never used, but led to errors in Xcode iOS projects (getting ld: Undefined symbols) 
+    #[cfg(not(target_os = "ios"))]
     pub fn send_mouse_down(&self) {
         if let Some(_view_controller) = self.view_controller.lock().unwrap().as_ref() {
             unsafe {

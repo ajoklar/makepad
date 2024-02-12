@@ -37,7 +37,91 @@ use {
 };
 
 impl Cx {
-    
+    pub fn native_view_event_loop(cx: Rc<RefCell<Cx>>) -> ObjcId {
+        use crate::apple_util::str_to_nsstring;
+        use crate::ios_app::get_ios_class_global;
+
+        cx.borrow_mut().self_ref = Some(cx.clone());
+        cx.borrow_mut().os_type = OsType::Ios;
+        let metal_cx: Rc<RefCell<MetalCx>> = Rc::new(RefCell::new(MetalCx::new()));
+        //let cx = Rc::new(RefCell::new(self));
+        crate::log!("Makepad iOS application started.");
+        //let metal_windows = Rc::new(RefCell::new(Vec::new()));
+        let device = metal_cx.borrow().device;
+        init_apple_classes_global();
+        init_ios_app_global(
+            device,
+            Box::new({
+                let cx = cx.clone();
+                move |event| {
+                    let mut cx_ref = cx.borrow_mut();
+                    let mut metal_cx = metal_cx.borrow_mut();
+                    let event_flow = cx_ref.ios_event_callback(event, &mut metal_cx);
+                    let executor = cx_ref.executor.take().unwrap();
+                    drop(cx_ref);
+                    executor.run_until_stalled();
+                    let mut cx_ref = cx.borrow_mut();
+                    cx_ref.executor = Some(executor);
+                    event_flow
+                }
+            }),
+        );
+
+        unsafe {
+            let mtk_view_obj: ObjcId = msg_send![get_ios_class_global().mtk_view, alloc];
+            let null_rect: NSRect = NSRect {
+                origin: NSPoint {
+                    x: f64::INFINITY,
+                    y: f64::INFINITY,
+                },
+                size: NSSize {
+                    width: 0.0,
+                    height: 0.0,
+                },
+            };
+            let mtk_view_obj: ObjcId = msg_send![mtk_view_obj, initWithFrame: null_rect];
+
+            let mtk_view_dlg_obj: ObjcId =
+                msg_send![get_ios_class_global().mtk_view_delegate, alloc];
+            let mtk_view_dlg_obj: ObjcId = msg_send![mtk_view_dlg_obj, init];
+
+            let () = msg_send![mtk_view_obj, setPreferredFramesPerSecond: 120];
+            let () = msg_send![mtk_view_obj, setDelegate: mtk_view_dlg_obj];
+            let () = msg_send![mtk_view_obj, setDevice: device];
+            let () = msg_send![mtk_view_obj, setUserInteractionEnabled: YES];
+            let () = msg_send![mtk_view_obj, setAutoResizeDrawable: YES];
+            let () = msg_send![mtk_view_obj, setMultipleTouchEnabled: YES];
+
+            let textfield_dlg: ObjcId = msg_send![get_ios_class_global().textfield_delegate, alloc];
+            let textfield_dlg: ObjcId = msg_send![textfield_dlg, init];
+
+            let textfield: ObjcId = msg_send![class!(UITextField), alloc];
+            let textfield: ObjcId = msg_send![textfield, initWithFrame: NSRect {origin: NSPoint {x: 10.0, y: 10.0}, size: NSSize {width: 100.0, height: 50.0}}];
+            let () = msg_send![textfield, setAutocapitalizationType: 0]; // UITextAutocapitalizationTypeNone
+            let () = msg_send![textfield, setAutocorrectionType: 1]; // UITextAutocorrectionTypeNo
+            let () = msg_send![textfield, setSpellCheckingType: 1]; // UITextSpellCheckingTypeNo
+            let () = msg_send![textfield, setHidden: YES];
+            let () = msg_send![textfield, setDelegate: textfield_dlg];
+            // to make backspace work - with empty text there is no event on text removal
+            let () = msg_send![textfield, setText: str_to_nsstring("x")];
+            let () = msg_send![mtk_view_obj, addSubview: textfield];
+
+            let notification_center: ObjcId =
+                msg_send![class!(NSNotificationCenter), defaultCenter];
+            let () = msg_send![notification_center, addObserver: textfield_dlg selector: sel!(keyboardDidChangeFrame:) name: UIKeyboardDidChangeFrameNotification object: nil];
+            let () = msg_send![notification_center, addObserver: textfield_dlg selector: sel!(keyboardWillChangeFrame:) name: UIKeyboardWillChangeFrameNotification object: nil];
+            let () = msg_send![notification_center, addObserver: textfield_dlg selector: sel!(keyboardDidShow:) name: UIKeyboardDidShowNotification object: nil];
+            let () = msg_send![notification_center, addObserver: textfield_dlg selector: sel!(keyboardWillShow:) name: UIKeyboardWillShowNotification object: nil];
+            let () = msg_send![notification_center, addObserver: textfield_dlg selector: sel!(keyboardDidHide:) name: UIKeyboardDidHideNotification object: nil];
+            let () = msg_send![notification_center, addObserver: textfield_dlg selector: sel!(keyboardWillHide:) name: UIKeyboardWillHideNotification object: nil];
+
+            get_ios_app_global().textfield = Some(textfield);
+            get_ios_app_global().mtk_view = Some(mtk_view_obj);
+
+            return mtk_view_obj;
+        }
+    }
+
     pub fn event_loop(cx:Rc<RefCell<Cx>>) { 
         cx.borrow_mut().self_ref = Some(cx.clone());
         cx.borrow_mut().os_type = OsType::Ios;

@@ -400,6 +400,8 @@ pub unsafe fn superclass<'a>(this: &'a Object) -> &'a Class {
     &*(superclass as *const _)
 }
 
+// This function was never used, but led to errors in Xcode iOS projects (getting ld: Undefined symbols) 
+#[cfg(not(target_os = "ios"))]
 pub fn bottom_left_to_top_left(rect: NSRect) -> f64 {
     let height = unsafe {CGDisplayPixelsHigh(CGMainDisplayID())};
     height as f64 - (rect.origin.y + rect.size.height)

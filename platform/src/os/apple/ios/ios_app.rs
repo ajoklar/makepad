@@ -187,10 +187,12 @@ impl IosApp {
     }
     
     pub fn check_window_geom() {
+        // Use the actual view's size instead of the screen size. mtk_view should be initialized
+        let mtk_view = get_ios_app_global().mtk_view.unwrap();
+        let view_rect: NSRect = unsafe {msg_send![mtk_view, bounds]};
         let main_screen: ObjcId = unsafe {msg_send![class!(UIScreen), mainScreen]};
-        let screen_rect: NSRect = unsafe {msg_send![main_screen, bounds]};
         let dpi_factor: f64 = unsafe {msg_send![main_screen, scale]};
-        let new_size = dvec2(screen_rect.size.width as f64, screen_rect.size.height as f64);
+        let new_size = dvec2(view_rect.size.width as f64, view_rect.size.height as f64);
         
         let new_geom = WindowGeom {
             xr_is_presenting: false,

@@ -118,7 +118,9 @@ macro_rules! init_makepad_view {
     ( $ app: ident) => {
         use crate::app::apple_sys::{nil, ObjcId};
         #[no_mangle]
-        pub fn init_makepad_view() -> ObjcId {
+        pub fn init_makepad_view(bundle_path: *const std::ffi::c_char) -> ObjcId {
+            let bundle_path = unsafe { std::ffi::CStr::from_ptr(bundle_path) }.to_str().unwrap();
+
             if Cx::pre_start() {
                 return nil;
             }
@@ -139,8 +141,7 @@ macro_rules! init_makepad_view {
             cx.borrow_mut()
                 .init_websockets(std::option_env!("MAKEPAD_STUDIO_HTTP").unwrap_or(""));
             live_design(&mut *cx.borrow_mut());
-            cx.borrow_mut().init_cx_os();
-            Cx::native_view_event_loop(cx)
+            Cx::native_view_event_loop(cx, bundle_path)
         }
     };
 }

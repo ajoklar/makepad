@@ -37,15 +37,24 @@ use {
 };
 
 impl Cx {
-    pub fn native_view_event_loop(cx: Rc<RefCell<Cx>>) -> ObjcId {
+    pub fn native_view_event_loop(cx: Rc<RefCell<Cx>>, bundle_path: &str) -> ObjcId {
         use crate::apple_util::str_to_nsstring;
         use crate::ios_app::get_ios_class_global;
+
+        // Took from `init_cx_os` and modified dependency loading. Resources are loaded from bundle no matter if on simulator or device
+        {
+            let mut cx = cx.borrow_mut();
+            cx.live_registry.borrow_mut().package_root = Some("makepad".to_string());
+            cx.live_expand();
+            cx.live_scan_dependencies();
+            cx.ios_load_dependencies(bundle_path);
+        }
 
         cx.borrow_mut().self_ref = Some(cx.clone());
         cx.borrow_mut().os_type = OsType::Ios;
         let metal_cx: Rc<RefCell<MetalCx>> = Rc::new(RefCell::new(MetalCx::new()));
         //let cx = Rc::new(RefCell::new(self));
-        crate::log!("Makepad iOS application started.");
+        // crate::log!("Makepad iOS application started.");
         //let metal_windows = Rc::new(RefCell::new(Vec::new()));
         let device = metal_cx.borrow().device;
         init_apple_classes_global();
@@ -181,20 +190,10 @@ impl Cx {
             self.call_event_handler(& Event::NetworkResponses(out))
         }
     }
-    
-    #[allow(dead_code)]
-    pub (crate) fn ios_load_dependencies(&mut self){
-        
-        let bundle_path = unsafe{
-            let main:ObjcId = msg_send![class!(NSBundle), mainBundle];
-            let path:ObjcId = msg_send![main, resourcePath];
-            nsstring_to_string(path)
-        };
-        
+
+    // It would be nice to find out the current module's bundle path from Rust. 
+    pub (crate) fn ios_load_dependencies(&mut self, bundle_path: &str) {
         for (path,dep) in &mut self.dependencies{
-            // MARK: Breaking change - Xcode copies project resources into the bundle root
-            // I don't like that paths include my computers user name, BTW
-            let path = &std::path::Path::new(&path).file_name().unwrap().to_str().unwrap().to_string();
             if let Ok(mut file_handle) = File::open(format!("{}/{}",bundle_path,path)) {
                 let mut buffer = Vec::<u8>::new();
                 if file_handle.read_to_end(&mut buffer).is_ok() {
@@ -438,9 +437,16 @@ impl CxOsApi for Cx {
         self.start_disk_live_file_watcher(50);
         
         self.live_scan_dependencies();
-        
-        // MARK: Breaking change - always load resources from bundle.
-        self.ios_load_dependencies();
+        //#[cfg(target_feature="sim")]
+        #[cfg(apple_sim)]
+        self.native_load_dependencies();
+
+        #[cfg(not(apple_sim))]
+        self.ios_load_dependencies(unsafe{
+            let main:ObjcId = msg_send![class!(NSBundle), mainBundle];
+            let path:ObjcId = msg_send![main, resourcePath];
+            nsstring_to_string(path)
+        }.as_ref());
     }
     
     fn spawn_thread<F>(&mut self, f: F) where F: FnOnce() + Send + 'static {
